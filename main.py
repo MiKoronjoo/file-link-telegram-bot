@@ -1,6 +1,7 @@
 import sqlite3
+import time
 
-from pyrogram import Client, Message
+from pyrogram import Client, Message, User
 from pyrogram.client.ext.utils import decode_file_id
 from pyrogram.client.ext.base_client import BaseClient
 
@@ -14,6 +15,23 @@ def exe_query(query):
     con_obj.commit()
     con_obj.close()
     return res
+
+
+def add_user(user_id, user_fn, user_ln):
+    if user_ln is None:
+        user_ln = ''
+    exe_query(f"INSERT INTO User VALUES ({user_id}, '{user_fn}', '{user_ln}', {int(time.time())});")
+
+
+def check(user: User):
+    if not exe_query(f'SELECT * FROM User where telegram_id = {user.id};'):
+        add_user(user.id, user.first_name, user.last_name)
+
+
+def statistics():
+    all_users = len(exe_query(f'SELECT * FROM User'))
+    rec_users = len(exe_query(f'SELECT * FROM User WHERE {int(time.time())} - timestamp < {24 * 60 * 60}'))
+    return f'All users count: {all_users}\nRecent users count: {rec_users}'
 
 
 def get_admin(telegram_id: int):
@@ -48,6 +66,7 @@ client = Client(session_name='my_bot',
 
 @client.on_message()
 def handle_message(bot: Client, msg: Message):
+    check(msg.from_user)
     admin = get_admin(msg.chat.id)
     if msg.text and msg.text.startswith('/start '):
         file_id = msg.text.split()[-1]
@@ -62,6 +81,9 @@ def handle_message(bot: Client, msg: Message):
         except AttributeError:
             bot.send_message(msg.chat.id, "Can't send file")
     elif admin:
+        if msg.text == '/st':
+            bot.send_message(msg.chat.id, statistics())
+            return
         if msg.document:
             file_id = msg.document.file_id
         elif msg.video:
