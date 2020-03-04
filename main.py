@@ -16,19 +16,26 @@ def exe_query(query):
     return res
 
 
-def get_admin(telegram_id):
+def get_admin(telegram_id: int):
     res = exe_query(f'SELECT * FROM Admin WHERE telegram_id = {telegram_id};')
+    return None if not res else res[0]
+
+
+def set_file_id(telegram_id: int, file_id: str):
+    if not exe_query(f"SELECT * FROM Media WHERE file_id = '{file_id}';"):
+        exe_query(f"INSERT INTO Media VALUES ('{file_id}', '');")
+    exe_query(f"UPDATE Admin SET file_id = '{file_id}' WHERE telegram_id = {telegram_id};")
+
+
+def get_media(file_id: str):
+    res = exe_query(f"SELECT * FROM Media WHERE file_id = '{file_id}';")
     return None if not res else res[0]
 
 
 def set_caption(admin: tuple, caption: str):
     caption = caption.replace("'", '"')
-    exe_query(f"UPDATE Media SET caption = '{caption}' WHERE file_id = {admin[1]};")
+    exe_query(f"UPDATE Media SET caption = '{caption}' WHERE file_id = '{admin[1]}';")
     exe_query(f'UPDATE Admin SET file_id = null WHERE telegram_id = {admin[0]};')
-
-
-def get_caption(file_id: str):
-    return 'caption'  # TODO: get caption from database
 
 
 client = Client(session_name='my_bot',
@@ -42,7 +49,19 @@ client = Client(session_name='my_bot',
 @client.on_message()
 def handle_message(bot: Client, msg: Message):
     admin = get_admin(msg.chat.id)
-    if admin:
+    if msg.text and msg.text.startswith('/start '):
+        file_id = msg.text.split()[-1]
+        media = get_media(file_id)
+        if not media:
+            bot.send_message(msg.chat.id, 'Invalid link')
+            return
+        decode = decode_file_id(file_id)
+        media_type = BaseClient.MEDIA_TYPE_ID[decode[0]]
+        try:
+            bot.__getattribute__(f'send_{media_type}')(msg.chat.id, file_id, caption=media[1])
+        except AttributeError:
+            bot.send_message(msg.chat.id, "Can't send file")
+    elif admin:
         if msg.document:
             file_id = msg.document.file_id
         elif msg.video:
@@ -63,15 +82,8 @@ def handle_message(bot: Client, msg: Message):
         else:
             bot.send_message(msg.chat.id, 'Send a valid file!')
             return
+        set_file_id(admin[0], file_id)
         bot.send_message(msg.chat.id, f't.me/{BOT_USERNAME}/?start={file_id}')
-    elif msg.text and msg.text.startswith('/start '):
-        file_id = msg.text.split()[-1]
-        decode = decode_file_id(file_id)
-        media_type = BaseClient.MEDIA_TYPE_ID[decode[0]]
-        try:
-            bot.__getattribute__(f'send_{media_type}')(msg.chat.id, file_id, caption=get_caption(file_id))
-        except AttributeError:
-            bot.send_message(msg.chat.id, "Can't send file")
     else:
         bot.send_message(msg.chat.id, 'Please use file links')
 
